@@ -39,14 +39,41 @@ PLAYTIME_ADDR = RAM + 0x0F8BD9       # プレイ時間（秒・分・時）
 JK_ID = 0x0199                       # ジャンプキック（全キャラ共通）
 ENEMY_GUARD_MOVES = {0x013C: "立ちガード", 0x008D: "しゃがみガード"}
 CHARACTERS = {0x08: "エポン", 0x10: "マリー", 0x16: "チャコ"}
+LABEL_MODES = ("技名", "コマンド")
 AREA_NAMES = {0x21: "プラクティス", 0x1E: "遺跡", 0x26: "神殿", 0x1C: "封印の迷宮", 0x2F: "フィールド"}
-# 分かっている技ID（共通技と一部のチャコの技）。分かったら追記できる
-# 書き方: 0xID(4桁): "技の名前",  を最後の } の前に足す（記号は半角）。詳しくは README.md
+# 分かっている技IDの (技名, コマンド)。ボタンでどちらを出すか切り替えられる
+# 連携は1段ごとに別IDなので、コマンドはその段までの入力を書く
+# 書き方: 0xID(4桁): ("技名", "コマンド"),  を最後の } の前に足す（記号は半角）。詳しくは README.md
 KNOWN_IDS = {
-    0x0199: "JK", 0x00AB: "ジャンプ昇り蹴り", 0x00F3: "大JK",
-    0x02C0: "掴み下段1", 0x02C1: "掴み下段2以降",
-    0x1622: "端脚", 0x1623: "連端脚2段目", 0x1626: "斧刃脚", 0x1649: "斧刃連脚2段目",
-    0x164C: "踏歩斧刃脚", 0x1619: "裏双脚", 0x164F: "滑刃腿", 0x1681: "拗歩転刃脚",
+    0x0003: ("立ち", "立ち"), 0x0008: ("前歩き", "→"), 0x0009: ("横移動", "↑/↓"),
+    0x0037: ("ガード", "Ｇ"), 0x01D4: ("走り", "走り"),
+    0x00D1: ("ジャンプ", "ジャンプ"), 0x00AB: ("ジャンプ昇り蹴り", "ジャンプ昇り攻撃"),
+    0x019A: ("JK(出だし)", "ジャンプ攻撃"), 0x0199: ("JK", "ジャンプ攻撃"),
+    0x00F3: ("大JK", "走りジャンプ長押し>攻撃"),
+    0x02C0: ("掴み下段1", "掴み下1"), 0x02C1: ("掴み下段2以降", "掴み下2以降"),
+    # チャコ（2026-10-07 ログで確認）
+    0x1617: ("冲捶", "上"), 0x164A: ("勢冲捶", "上長押し"), 0x1618: ("連捶2段目", "上､上"),
+    0x1653: ("連捶掌3段目", "上､上､上"), 0x164B: ("天中掌(中)", "(上､上､上 or →上)､中"),
+    0x1634: ("攪打頂肘3段目", "上､上､中"), 0x1638: ("連捶肘挫掌4段目", "上､上､中､中"),
+    0x1639: ("連捶掃双脚3段目", "上､上､下"), 0x1673: ("裏冲天脚(中)", "(上､上､下 or Ｇ下)､中"),
+    0x1684: ("＊天掌", "→上"), 0x1620: ("螺旋脚", "←↑↓上"), 0x16A0: ("空旋脚", "→→上"),
+    0x16A2: ("竜尾脚", "↑↑上/↓↓上"), 0x1615: ("螺旋激脚", "Ｇ上"), 0x165E: ("横避双撞掌", "しゃがみ上"),
+    0x1622: ("端脚", "中"), 0x1623: ("連端脚2段目", "中､中"), 0x1624: ("連端天脚2段目", "中､上"),
+    0x1647: ("連端旋脚2段目", "中､上(旋)"), 0x1631: ("伏勢虎", "中､Ｇ"), 0x162F: ("渦螺旋掌", "中､→"),
+    0x162B: ("螺旋掌", "→中"), 0x161E: ("双単鞭", "←↑↓中"), 0x161F: ("単陽打2段目", "←↑↓中､中"),
+    0x165B: ("旋踵刃", "←↑↓中+下 / ←←中､中"), 0x1630: ("落踵双脚", "←←中"),
+    0x1682: ("魂心螺旋掌?", "↑中､↑↓中"), 0x16A4: ("魂心螺旋掌2?", "↑中､↑↓中､↓"),
+    0x162C: ("双統掌", "→→中"), 0x1667: ("練気弾", "←中←"),
+    0x163A: ("冲天脚?", "立ち上がり中"), 0x1648: ("冲天脚(長押し)?", "立ち上がり中長押し"),
+    0x1658: ("勢壁靠?", "走り始め中"), 0x161B: ("跳飛双捶?", "走り中"),
+    0x1626: ("斧刃脚", "下"), 0x1649: ("斧刃連脚2段目", "下､下"), 0x1657: ("幻斧双脚", "下､Ｇ"),
+    0x164C: ("踏歩斧刃脚", "方向+下"), 0x164D: ("連斧旋脚2段目", "方向+下､中"),
+    0x1652: ("環斧連旋脚3段目", "方向+下､中､中"), 0x164E: ("反撥虎", "方向+下､Ｇ"),
+    0x167E: ("双撞掌", "方向+下､Ｇ､上"), 0x1675: ("猛虎爬山", "方向+下､Ｇ､中"),
+    0x1681: ("拗歩転刃脚", "→→下"), 0x1619: ("裏双脚", "Ｇ下"), 0x163B: ("立ち下（技名不明）", "立ち上がりに下"),
+    0x1660: ("反動脚(走り上)", "走り上"), 0x1662: ("反動三段脚2段目", "走り上､上"),
+    0x1663: ("反動三段脚3段目", "走り上､上､上"), 0x1661: ("反動天地脚2段目", "走り上､下"),
+    0x164F: ("滑刃腿", "走り下"), 0x165A: ("裏斧刃脚", "後ろ向きで下"),
 }
 
 POLL_MS = 16
@@ -66,9 +93,12 @@ def u16(data, offset=0):
     return int.from_bytes(data[offset:offset + 2], "little")
 
 
+label_mode = 0  # 0=技名、1=コマンド（ボタンで切り替え）
+
+
 def id_label(move_id):
     if move_id in KNOWN_IDS:
-        return KNOWN_IDS[move_id]
+        return KNOWN_IDS[move_id][label_mode]
     return CHARACTERS.get(move_id >> 8, "")
 
 
@@ -134,6 +164,14 @@ class App:
         self.status = tk.Label(self.root, font=mono, fg="white", bg="black",
                                justify="left", anchor="w", padx=10)
         self.status.pack(fill="x")
+        move_row = tk.Frame(self.root, bg="black")
+        move_row.pack(fill="x")
+        self.move_label = tk.Label(move_row, font=mono, fg="#9be89b", bg="black",
+                                   justify="left", anchor="w", padx=10)
+        self.move_label.pack(side="left", fill="x", expand=True)
+        self.mode_button = tk.Button(move_row, text=f"表示: {LABEL_MODES[label_mode]}",
+                                     command=self.toggle_label)
+        self.mode_button.pack(side="right", padx=10)
         self.table = tk.Text(self.root, font=mono, fg="white", bg="black", width=36,
                              height=SLOT_COUNT + 3, padx=10, borderwidth=0,
                              highlightthickness=0, state="disabled", cursor="arrow")
@@ -154,6 +192,11 @@ class App:
         self.gdb.close()
         self.log_file.close()
         self.root.destroy()
+
+    def toggle_label(self):
+        global label_mode
+        label_mode = 1 - label_mode
+        self.mode_button.config(text=f"表示: {LABEL_MODES[label_mode]}")
 
     def add_log(self, text, tag=""):
         line = f"{datetime.now():%H:%M:%S} {text}"
@@ -216,6 +259,8 @@ class App:
         self.jk_label.config(text=f"ノートのJK {self.note_jk(state['slots'])} 回   ガード {self.guards} 回")
         area = AREA_NAMES.get(state["area"], f"{state['area']:02X}")
         self.status.config(text=f"敵 {state['name']}\n{area}  FLOOR {state['floor']}   {state['playtime']}")
+        move = state["move"]
+        self.move_label.config(text=f"今の技 {move:04X} {id_label(move)}")
         self.table.config(state="normal")
         self.table.delete("1.0", "end")
         self.table.insert("end", "枠  ID    回数  技\n── その敵だけのメモ ──\n", "head")
@@ -245,6 +290,7 @@ class App:
             self.prev_slots = self.prev_enemy_move = self.prev_area = None
             self.jk_label.config(text="DuckStation 未接続")
             self.status.config(text="GDBサーバー（ポート2345）を待っています")
+            self.move_label.config(text="")
             self.root.after(RETRY_MS, self.tick)
             return
         now = time.monotonic()
