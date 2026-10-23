@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>トバル2 JKガード監視</title>
+<meta name="description" content="トバル2（PS1）のクエストモードで、敵が覚えている技の回数の表を小窓に表示するDuckStation用ツール">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@400;500;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f4ef; --panel:#ffffff; --panel2:#efece4; --ink:#1d1b18; --sub:#5d5850; --line:#d9d3c7;
+  --cur:#2f7de1; --cur-bg:#e3eefc;
+  --tot:#d9572b; --tot-bg:#fbe7df;
+  --ok:#1f9d63; --ok-bg:#dcf3e8;
+  --ng:#d63649; --ng-bg:#fbe0e4;
+  --warn:#c98a00; --warn-bg:#fdf1d2;
+  --jk:#8b4fd8; --jk-bg:#efe5fb;
+  --code-bg:#24262d; --code-ink:#e8e6e1;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 6px 20px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15161a; --panel:#1e2026; --panel2:#262932; --ink:#ecebe8; --sub:#a4a19a; --line:#363a45;
+    --cur:#6aa8ff; --cur-bg:#1d2d45; --tot:#ff8a5c; --tot-bg:#43271d;
+    --ok:#4fd39a; --ok-bg:#173828; --ng:#ff6b7d; --ng-bg:#46202a;
+    --warn:#ffc94a; --warn-bg:#3d3215; --jk:#b98cff; --jk-bg:#2e2443;
+    --code-bg:#0f1013; --code-ink:#e8e6e1;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15161a; --panel:#1e2026; --panel2:#262932; --ink:#ecebe8; --sub:#a4a19a; --line:#363a45;
+  --cur:#6aa8ff; --cur-bg:#1d2d45; --tot:#ff8a5c; --tot-bg:#43271d;
+  --ok:#4fd39a; --ok-bg:#173828; --ng:#ff6b7d; --ng-bg:#46202a;
+  --warn:#ffc94a; --warn-bg:#3d3215; --jk:#b98cff; --jk-bg:#2e2443;
+  --code-bg:#0f1013; --code-ink:#e8e6e1;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"M PLUS 1p",system-ui,sans-serif;line-height:1.8;font-size:16px}
+a{color:var(--cur)}
+code,.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+:not(pre)>code{background:var(--panel2);border-radius:5px;padding:.05em .4em;font-size:.88em}
+.wrap{max-width:860px;margin:0 auto;padding:0 16px 80px}
+header{padding:48px 0 4px}
+.kicker{font-size:.8rem;font-weight:700;letter-spacing:.15em;color:var(--sub)}
+h1{font-size:clamp(1.8rem,5.5vw,2.5rem);line-height:1.25;margin:.2em 0 .4em;font-weight:800}
+h1 em{font-style:normal;color:var(--jk)}
+.lead{margin:0 0 .3em}
+section{margin-top:56px;scroll-margin-top:16px}
+h2{font-size:1.4rem;margin:0 0 .7em;font-weight:800;display:flex;align-items:center;gap:.5em}
+h2 .no{font-size:.8rem;font-weight:800;background:var(--ink);color:var(--bg);padding:.2em .7em;border-radius:99px;letter-spacing:.05em}
+h3{font-size:1.08rem;margin:0 0 .5em;font-weight:800}
+p{margin:.4em 0}
+ul,ol{margin:.4em 0;padding-left:1.4em}
+li{margin:.25em 0}
+.small{font-size:.86rem;color:var(--sub)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow)}
+.stack{display:flex;flex-direction:column;gap:14px}
+.tag{display:inline-block;font-size:.72rem;font-weight:700;padding:.1em .65em;border-radius:99px;vertical-align:.12em;margin-left:.2em}
+.t-ok{background:var(--ok-bg);color:var(--ok)}
+.t-warn{background:var(--warn-bg);color:var(--warn)}
+.t-ng{background:var(--ng-bg);color:var(--ng)}
+.t-cur{background:var(--cur-bg);color:var(--cur)}
+
+/* 目次 */
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.toc a{text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:99px;padding:.3em .9em;font-size:.86rem;font-weight:700}
+.toc a:hover{border-color:var(--cur);color:var(--cur)}
+
+/* できること */
+.feat{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:640px){.feat{grid-template-columns:1fr}}
+.feat li{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.feat b{display:block}
+
+/* 手順 */
+.step{display:grid;grid-template-columns:2.2em 1fr;gap:14px;align-items:start}
+.step .n{width:2.2em;height:2.2em;border-radius:50%;background:var(--cur);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-family:"JetBrains Mono",monospace}
+.step .body{min-width:0}
+.os{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+@media (max-width:720px){.os{grid-template-columns:1fr}}
+.os>div{background:var(--panel2);border-radius:12px;padding:12px 14px;min-width:0}
+.os .h{font-weight:800;margin-bottom:.2em}
+.os ol{padding-left:1.3em}
+
+/* 冒頭のダウンロード */
+.hero{margin-top:20px;background:var(--cur-bg);border:2px solid var(--cur);border-radius:16px;padding:16px 20px}
+.hero .history{margin-top:.6em;padding-top:.6em;border-top:1px solid var(--line);font-size:.82rem;color:var(--sub)}
+.hero .h{font-weight:800;color:var(--cur);font-size:1.05rem}
+details{margin-top:.6em}
+summary{cursor:pointer;font-weight:700;font-size:.92rem}
+/* 見たい人だけの節（線で区切って、たたんでおく） */
+section.extra{border-top:2px dashed var(--line);padding-top:32px}
+.fold>summary{list-style:none;display:flex;align-items:center;flex-wrap:wrap;gap:.3em 1em}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary h2{margin:0}
+.fold>summary h2::before{content:"▶";font-size:.7em;color:var(--sub);transition:transform .15s}
+.fold[open]>summary h2::before{transform:rotate(90deg)}
+.fold>summary .hint{font-size:.85rem;color:var(--sub);font-weight:700}
+.fold[open]>summary{margin-bottom:.7em}
+
+/* ダウンロード */
+.dl{display:inline-flex;align-items:center;gap:.5em;background:var(--cur);color:#fff;text-decoration:none;font-weight:800;padding:.6em 1.1em;border-radius:12px;margin:.3em 0}
+.dl:hover{filter:brightness(1.08)}
+.dl .mono{font-weight:700;font-size:.9em}
+.files{display:flex;flex-wrap:wrap;gap:6px;margin:.5em 0}
+.files a{font-size:.85rem;text-decoration:none;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:.2em .65em;color:var(--ink)}
+.files a:hover{border-color:var(--cur);color:var(--cur)}
+.files a.has{border-color:var(--ok);background:var(--ok-bg)}
+
+/* コード */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:12px;padding:14px 16px;overflow-x:auto;font-size:.84rem;line-height:1.6;margin:.6em 0;font-family:"JetBrains Mono",ui-monospace,monospace}
+.codebox{position:relative}
+.copy{position:absolute;top:8px;right:8px;font:inherit;font-size:.75rem;font-weight:700;border:none;border-radius:8px;padding:.3em .8em;background:rgba(255,255,255,.14);color:var(--code-ink);cursor:pointer}
+.copy:hover{background:rgba(255,255,255,.25)}
+
+/* 表 */
+.tbl{width:100%;border-collapse:collapse;font-size:.92rem}
+.tbl th,.tbl td{text-align:left;padding:.5em .6em;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:.8rem;color:var(--sub);font-weight:700}
+.tbl td:first-child{white-space:nowrap;font-weight:700}
+.tbl .c{color:var(--cur)} .tbl .t{color:var(--tot)}
+
+/* 用語 */
+dl.terms{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:8px 16px}
+@media (max-width:560px){dl.terms{grid-template-columns:1fr;gap:2px}dl.terms dd{margin-bottom:10px}}
+dl.terms dt{font-weight:800}
+dl.terms dd{margin:0}
+
+.note{border-left:4px solid var(--warn);background:var(--warn-bg);padding:10px 14px;border-radius:0 10px 10px 0;margin-top:12px;font-size:.93rem}
+.note b{color:var(--warn)}
+.danger{border-left-color:var(--ng);background:var(--ng-bg)}
+.danger b{color:var(--ng)}
+.key{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:.8em;font-weight:700;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:0 .45em;background:var(--panel)}
+.c-y{color:var(--warn);font-weight:800} .c-b{color:var(--cur);font-weight:800} .c-g{color:var(--ok);font-weight:800}
+footer{margin-top:64px;color:var(--sub);font-size:.8rem;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">トバル2（PS1）・DuckStation 用ツール</div>
+  <h1>JKガード監視<br><em>敵が覚えている技の回数を見る</em></h1>
+  <p class="lead">トバル2のクエストモードで、敵が覚えている「技の回数の表」を小窓に表示するツールです。</p>
+  <p class="small">Mac・Windows で動作確認済み</p>
+  <div class="hero" id="top-dl">
+    <div class="h">とりあえず触りたい人はここから</div>
+    <a class="dl" href="tobal2_jkguard.zip" download>ダウンロード <span class="mono">tobal2_jkguard.zip</span></a>
+    <p class="small">ツール本体と技表（<code>waza</code> フォルダ）が入っています。展開したら <a href="#setup">使い方</a> の手順で動かしてください。</p>
+    <p class="history"><b>更新履歴</b>　Ver1　チュージ、エポン、フェイ、マリー、チャコの技表を追加</p>
+  </div>
+  <nav class="toc">
+    <a href="#feat">できること</a>
+    <a href="#setup">使い方</a>
+    <a href="#screen">画面の見方</a>
+    <a href="#notes">注意</a>
+    <a href="#waza">技の名前を登録する</a>
+  </nav>
+</header>
+
+<!-- ===== できること ===== -->
+<section id="feat">
+  <h2>できること</h2>
+  <ul class="feat">
+    <li><b>表の10枠を表示</b>「その敵だけのメモ」と「記憶ノート」。回数が増えた枠は赤く光ります</li>
+    <li><b>今の技・敵の情報</b>自分と敵の今の技、敵の名前、エリア、プレイ時間</li>
+    <li><b>ログを残す</b>敵がガードした時や表が増えた時などを <code>logs</code> フォルダに保存</li>
+    <li><b>検証用の書き換え</b>表の枠を書き換える機能もあります（使わなければゲームには何もしません）</li>
+  </ul>
+</section>
+
+<!-- ===== 使い方 ===== -->
+<section id="setup">
+  <h2>使い方</h2>
+  <div class="stack">
+
+    <div class="card step">
+      <div class="n">1</div>
+      <div class="body">
+        <h3>Python 3 を入れる</h3>
+        <p>このツールは <b>Python（パイソン）</b> というプログラミング言語で書かれています。動かすには、パソコンに Python 3 を一度だけインストールしておく必要があります（無料）。</p>
+        <p class="small">小窓の表示には <b>tkinter（ティーキンター）</b> という、Python に最初から付いてくる「ウィンドウを作る部品」を使っています。python.org のインストーラーで入れれば一緒に入るので、別に何かを入れる必要はありません。</p>
+        <div class="os">
+          <div>
+            <div class="h">Windows</div>
+            <ol>
+              <li><a href="https://www.python.org/downloads/">python.org/downloads</a> を開き、黄色い「Download Python 3.x.x」ボタンからインストーラーをダウンロード</li>
+              <li>インストーラーを開いたら、最初の画面の下にある <b>「Add python.exe to PATH」にチェック</b> を入れてから「Install Now」</li>
+            </ol>
+          </div>
+          <div>
+            <div class="h">Mac</div>
+            <ol>
+              <li>同じく <a href="https://www.python.org/downloads/">python.org/downloads</a> から macOS 用のインストーラー（.pkg）をダウンロードして、そのまま進めてインストール</li>
+              <li>Homebrew で入れた Python は tkinter が入っていないことがあるので、python.org 版がおすすめです</li>
+            </ol>
+            <div class="note danger"><b>Homebrew を使っている人へ</b>　このツールに Homebrew は必要ありません。ただし Homebrew を使う場合は、2026-10-23 時点で必ず最新の状態にアップデートしてください（ターミナルで <code>brew update</code>）。2026年9月の Homebrew 7.0.0 で、セキュリティの問題が8件修正されています。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card step">
+      <div class="n">2</div>
+      <div class="body">
+        <h3>ツールをダウンロードして置く</h3>
+        <ol>
+          <li><a href="#top-dl">ページ上のボタン</a>からダウンロードした zip を展開する（Windows: 右クリック →「すべて展開」、Mac: ダブルクリック）</li>
+          <li>できた <code>tobal2</code> フォルダを、デスクトップなど分かりやすい場所に置く。ガードのログは、この中にできる <code>logs</code> フォルダに保存されます</li>
+        </ol>
+        <pre>tobal2/
+├ TOBAL2_duck_JKguard.py   ← ツール本体
+└ waza/                    ← 技表（キャラごと）
+   ├ 00_共通.json
+   ├ 01_チュージ.json
+   ├ …
+   └ 10_ドクターV.json</pre>
+        <details>
+          <summary>ファイルを1つずつダウンロードする場合（技表だけ新しくしたい時など）</summary>
+          <p><a href="TOBAL2_duck_JKguard.py" download>TOBAL2_duck_JKguard.py</a>（ツール本体）</p>
+          <p class="small">ブラウザに文字がずらっと表示された場合は、リンクを右クリック →「名前を付けてリンク先を保存」。技表はツールと同じ場所の <code>waza</code> フォルダに入れます。</p>
+        <div class="files">
+          <a class="has" href="waza/00_共通.json" download>00_共通.json</a>
+          <a class="has" href="waza/01_チュージ.json" download>01_チュージ.json</a>
+          <a class="has" href="waza/02_エポン.json" download>02_エポン.json</a>
+          <a href="waza/03_グリン.json" download>03_グリン.json</a>
+          <a href="waza/04_オライムス.json" download>04_オライムス.json</a>
+          <a class="has" href="waza/05_フェイ.json" download>05_フェイ.json</a>
+          <a href="waza/06_ホム.json" download>06_ホム.json</a>
+          <a class="has" href="waza/07_マリー.json" download>07_マリー.json</a>
+          <a href="waza/08_イール.json" download>08_イール.json</a>
+          <a class="has" href="waza/09_チャコ.json" download>09_チャコ.json</a>
+          <a href="waza/10_ドクターV.json" download>10_ドクターV.json</a>
+        </div>
+        <p class="small">緑の枠はIDを登録済みの技表です（全部の技ではありません）。それ以外は技名だけ入っていて、IDはまだ空です。<code>00_共通.json</code> は JK など全キャラ共通の技。<code>waza</code> フォルダが無くても動きます（技名が出ず、IDの数字だけになります）。</p>
+        </details>
+      </div>
+    </div>
+
+    <div class="card step">
+      <div class="n">3</div>
+      <div class="body">
+        <h3>DuckStation の設定</h3>
+        <p>設定 → デバッグ →「<b>GDB サーバーを有効化</b>」をオン（ポートは <code>2345</code> のまま）。最初に一度やればOKです。</p>
+      </div>
+    </div>
+
+    <div class="card step">
+      <div class="n">4</div>
+      <div class="body">
+        <h3>実行する</h3>
+        <p>ゲームを起動してから、下の手順でツールを実行します。コマンドを打つ画面（Windowsはコマンドプロンプト、Macはターミナル）を使いますが、打つのは1行だけです。</p>
+        <div class="os">
+          <div>
+            <div class="h">Windows</div>
+            <ol>
+              <li>エクスプローラーで、ツールを置いたフォルダを開く</li>
+              <li>上のアドレス欄（フォルダの場所が表示されている所）をクリックして、<code>cmd</code> と入力して <span class="key">Enter</span>。そのフォルダで黒い画面（コマンドプロンプト）が開きます</li>
+              <li>次の1行を打って <span class="key">Enter</span>
+                <div class="codebox"><pre>py TOBAL2_duck_JKguard.py</pre><button class="copy" type="button">コピー</button></div>
+              </li>
+            </ol>
+            <p class="small">PowerShell でも同じコマンドで動きます。</p>
+          </div>
+          <div>
+            <div class="h">Mac</div>
+            <ol>
+              <li>アプリケーション → ユーティリティ →「ターミナル」を開く</li>
+              <li><code>python3 </code> と打つ（最後に半角スペースを1つ）</li>
+              <li>ダウンロードした <code>TOBAL2_duck_JKguard.py</code> をターミナルの画面にドラッグ＆ドロップ（ファイルの場所が自動で入ります）</li>
+              <li><span class="key">Enter</span></li>
+            </ol>
+          </div>
+        </div>
+        <p style="margin-top:.8em"><span class="tag t-ok">成功</span> 小窓が出たらOK。終わる時は小窓を閉じてください（黒い画面も閉じてOK）。</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===== 画面の見方 ===== -->
+<section id="screen">
+  <h2>画面の見方</h2>
+
+  <div class="stack" style="margin-top:20px">
+    <div class="card">
+      <h3>表</h3>
+      <p class="small">アドレス <code>0x8012806C</code>〜（1枠 = 技ID 2バイト + 回数 2バイト、10枠）</p>
+      <table class="tbl">
+        <tr><th>枠</th><th>呼び方</th><th>中身</th></tr>
+        <tr><td class="c">枠0・1</td><td class="c"><b>その敵だけのメモ</b></td><td>1体の敵との戦闘で最初に出した2種類の技。敵が替わると空になる</td></tr>
+        <tr><td class="t">枠2〜9</td><td class="t"><b>記憶ノート</b></td><td>3種類目以降に出した技。ハードリセットまで消えない</td></tr>
+      </table>
+      <ul style="margin-top:.8em">
+        <li>回数は技を「出した時」に増えます（空振りでも）</li>
+        <li>ジャンプキック（JK）のIDは全キャラ共通で <code>0199</code></li>
+        <li><b>記憶ノートのJKが6回前後を超えると</b>、ガードする種類の敵にJKをガードされやすくなります</li>
+        <li>技の名前が出るのは、技表にIDが登録済みの技だけです。それ以外はIDの数字だけが出ます（JKの回数はどのキャラでも見られます）</li>
+        <li>IDの上2桁でキャラが分かります（<code>04xx</code>=チュージ、<code>08xx</code>=エポン、<code>0Exx</code>=フェイ、<code>10xx</code>=マリー、<code>16xx</code>=チャコ）</li>
+        <li>技の名前は <a href="https://w.atwiki.jp/tobal2/">トバル2 wiki</a> の技表を参照しています</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>ボタン</h3>
+      <dl class="terms">
+        <dt>ガード！／ガード無し／区切り</dt>
+        <dd>押した時刻と表の中身をログに残します。「ここからガードされ始めた」などの目印用</dd>
+        <dt>表示: 技名／コマンド</dt>
+        <dd>表・今の技・ログに出す文字を「技名」と「コマンド」（例: <code>方向+下</code>）に切り替えます</dd>
+        <dt>書き込み</dt>
+        <dd>指定した枠に、好きな技IDと回数を書き込みます（例: 枠9にJKを8回） <span class="tag t-warn">検証用</span></dd>
+        <dt>技登録（右上）</dt>
+        <dd>技の名前を登録する窓を開きます（<a href="#waza">下で説明</a>）</dd>
+      </dl>
+      <div class="note danger"><b>注意</b>　書き込みはゲームのメモリを書き換えます。普通に遊ぶ・走る時は使わないでください。ハードリセットすれば表は元に戻ります。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 注意 ===== -->
+<section id="notes">
+  <h2>注意</h2>
+  <div class="card">
+    <ul>
+      <li>GDBサーバーには1本しか繋がらないので、他のGDBツールとは同時に使えません</li>
+      <li>ステートロードで表が入れ替わった時は、ログに「◆ステートロード？」と出ます（入れ替わりは技の増加として数えません）</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===== 技登録 ===== -->
+<section id="waza" class="extra">
+  <details class="fold">
+  <summary><h2>技の名前を自分で登録する</h2><span class="hint">見たい人だけ（クリックで開く）</span></summary>
+  <p>技の名前とコマンドは、<code>waza</code> フォルダの技表（キャラごとの <code>.json</code>）に入っています。ファイル名の頭の番号は wiki のキャラの並び順です。技表は <a href="https://w.atwiki.jp/tobal2/">トバル2 wiki</a> の技表と同じ並びで、1行が1つの技です。</p>
+  <pre>{"分類": "上段技", "技名": "連捶掌", "コマンド": "上､上､上", "ID": ["1617", "1618", "1653"]},</pre>
+  <ul>
+    <li>「ID」はその技を出した時に出るIDの並びです（連携技は1段ごとに別のIDになります）</li>
+    <li>IDが <code>[]</code>（空）の技は、まだ調べていない技です</li>
+    <li><code>"スキップ": true</code> が付いた技は、登録しないことにした技です（投げなど）</li>
+  </ul>
+
+  <div class="stack" style="margin-top:20px">
+    <div class="card">
+      <h3>「技登録」ボタンで登録する</h3>
+      <ol>
+        <li>DuckStation とツールを動かし、トレーニングモードなど落ち着いて技を出せる場所に行く</li>
+        <li>小窓の「技登録」ボタンを押すと、登録用の窓が開きます</li>
+        <li>左上でキャラの技表を選ぶと、まだIDが無い最初の技が表示されます</li>
+        <li>表示された技を出すと、出たIDが並びます</li>
+        <li>合っていれば「登録」（窓を選んだ状態で <span class="key">Enter</span>）→ 技表に保存され、次の技に進みます</li>
+      </ol>
+      <pre>[09_チャコ ▼]  12/75 （ID登録済み 53  スキップ 0）
+[上段技] 連捶掌
+上､上､上
+登録済みのID: なし
+待機とみなすID: まだなし
+済 1617 冲捶          ← 出たIDがここに並ぶ
+済 1618 連捶
+新 1653 （未登録）
+[登録 (Enter)] [スキップ (S)] [やり直し (BS)] [← 前] [次 →] [待機の判定を消す]</pre>
+      <p><b>並んだIDの色</b></p>
+      <ul>
+        <li><span class="c-y">黄色の「済」</span>＝他の技（または待機）で登録済み</li>
+        <li><span class="c-b">水色の「済」</span>＝今の技に登録済み</li>
+        <li><span class="c-g">緑の「新」</span>＝まだどの技にも登録されていないID</li>
+      </ul>
+      <p><b>操作のコツ</b></p>
+      <ul>
+        <li>技と技の間を少し空けると、次に出した技から数え直します。途中で失敗したら「やり直し」（<span class="key">BackSpace</span>）</li>
+        <li>キャラによって待機（立っているだけ）のIDが違います。待機IDがまだ無いキャラでは、技を出す前に1.5秒立っていると、そのIDを「待機」として技表の <code>"待機ID"</code> に保存し、並びから外します（表示も「待機」になります）。しゃがみなど他の待機を足したい時は、ID欄に入れて「このIDを待機にする」。間違えた時は「待機の判定を消す」</li>
+        <li>登録しない技（投げなど）は「スキップ」（<span class="key">S</span>）。技表に印が付き、次に窓を開いた時も飛ばされます。スキップした技でもう一度押すと印が外れます</li>
+        <li>後で調べたい技は「次 →」（<span class="key">→</span>）で1つ先へ。印は付かないので、次に窓を開いた時にまた出てきます</li>
+        <li>間違えて登録したら「← 前」で戻って、出し直して「登録」（上書きされます）</li>
+        <li>登録した内容はすぐ技表に保存され、表やログの技名にも反映されます</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>ノートの名前を直す・wikiに無い技を足す</h3>
+      <p>登録窓の下の「ID」「技名」「コマンド」欄に入れてから、ボタンを押します。</p>
+      <pre>ID [      ]  技名 [      ]  コマンド [      ]  [探す]
+ノートの表示  [ノートに出る名前を変更]
+技表          [wikiに無い技を足す] [この技を消す] [このIDを待機にする]</pre>
+      <p style="margin-top:1em"><span class="tag t-cur">探す</span>　ID欄にIDを入れて「探す」（または Enter）を押すと、そのIDを使っている技を表示します。ID欄が空なら、技名欄の文字を含む技を探します。今の技表に無ければ他のキャラの技表も探し、もう一度押すと次の候補に進みます</p>
+      <p style="margin-top:1em"><span class="tag t-warn">ノートの表示</span>　小窓の表（ノート）に出る名前を直します</p>
+      <dl class="terms">
+        <dt>ノートに出る名前を変更</dt>
+        <dd>ノートに出ている ID（例: <code>0E26</code>）をID欄に、出したい名前を技名欄・コマンド欄に入れて押します（コマンド欄が空なら今のコマンドのまま）。そのIDの表示だけが変わります（今の技・ログの表示も同じになります）。技表の <code>"表示名"</code> に保存されます。技名欄を空にして押すと元に戻ります</dd>
+      </dl>
+      <p style="margin-top:1em"><span class="tag t-ok">技表</span>　技表の行を増やす・減らす、待機を決めます</p>
+      <dl class="terms">
+        <dt>wikiに無い技を足す</dt>
+        <dd>wikiに無い技を技表の最後に「技表に無い技」として足します。技名は必須、IDはID欄に入れる（連携技は <code>0E2D 0E2E</code> のように空白か <code>→</code> で区切る）か、空のままその技を出せば出たIDの並びを使います</dd>
+        <dt>この技を消す</dt>
+        <dd>「wikiに無い技を足す」で足した技を、技表から消します（間違えて足した時用。確認が出ます）。wikiの技は消せないので、登録しない時は「スキップ」を使います</dd>
+        <dt>このIDを待機にする</dt>
+        <dd>そのIDを待機（立っているだけ等）として扱い、並びから外します</dd>
+      </dl>
+      <div class="note"><b>同じIDを使う技が複数ある時</b>　表の表示名は ①そのIDが出るまでの段の数が少ない技 → ②同じ段の数なら、そのIDで終わる技 → ③技表で先に書いてある技 の順で決まります。</div>
+    </div>
+
+    <div class="card">
+      <h3>手で書き足す場合</h3>
+      <p>技表の <code>.json</code> はテキストエディタで直接直すこともできます（ツールを閉じてから）。</p>
+      <ul>
+        <li><b>Windows</b>: 右クリック →「プログラムから開く」→「メモ帳」</li>
+        <li><b>Mac</b>: 「CotEditor」や「Visual Studio Code」など、プログラム用のエディタがおすすめです（標準の「テキストエディット」は <code>"</code> が勝手に <code>“ ”</code> に変わって動かなくなることがあります）</li>
+      </ul>
+      <div class="note"><b>書き方の注意</b>　記号（<code>"</code> <code>,</code> <code>[</code> <code>]</code> <code>{</code> <code>}</code> <code>:</code>）は<b>半角</b>で。技の行の最後の <code>,</code> は、一番最後の技にだけ付けません。書き方を間違えると、起動した時にログに「○○.json が読めません」と出ます。</div>
+    </div>
+  </div>
+  </details>
+</section>
+
+<footer>Honoken303Store ・ トバル2 JKガード監視</footer>
+</div>
+
+<script>
+document.querySelectorAll('.copy').forEach(function(b){
+  b.addEventListener('click',function(){
+    var t=b.parentNode.querySelector('pre').innerText;
+    var done=function(){b.textContent='コピーしました';setTimeout(function(){b.textContent='コピー'},1500)};
+    if(navigator.clipboard){navigator.clipboard.writeText(t).then(done,function(){})}
+  });
+});
+// #waza へのリンクで来た時は、たたんである節を開く
+function openFold(){var d=document.querySelector(location.hash+' > details.fold');if(d)d.open=true}
+window.addEventListener('hashchange',openFold);
+if(location.hash)openFold();
+</script>
+</body>
+</html>

@@ -9,11 +9,13 @@
 # ログ: このファイルと同じ場所の logs フォルダに保存される
 # 注意: GDBサーバーには1本しか繋がらない想定なので、他のGDBツール（TOBAL2_duck_RNG.py など）とは同時に使わない
 
+import json
 import re
 import socket
 import time
 import tkinter as tk
 import tkinter.font as tkfont
+from tkinter import messagebox
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -52,39 +54,12 @@ LOG_LINES = 300
 LOAD_SLOT_CHANGES = 3    # 表の枠がこれ以上同時に変わったらステートロードとみなす
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 
-# 判明しているIDの (技名, コマンド)（分かったら追記していく）
-# 連携は1段ごとに別IDなので、コマンドはその段までの入力を書く
-KNOWN_IDS = {
-    0x0003: ("立ち", "立ち"), 0x0008: ("前歩き", "→"), 0x0009: ("横移動", "↑/↓"),
-    0x0037: ("ガード", "Ｇ"), 0x01D4: ("走り", "走り"),
-    0x00D1: ("ジャンプ", "ジャンプ"), 0x00AB: ("ジャンプ昇り蹴り", "ジャンプ昇り攻撃"),
-    0x019A: ("JK(出だし)", "ジャンプ攻撃"), 0x0199: ("JK", "ジャンプ攻撃"),
-    0x00F3: ("大JK", "走りジャンプ長押し>攻撃"),
-    0x02C0: ("掴み下段1", "掴み下1"), 0x02C1: ("掴み下段2以降", "掴み下2以降"),
-    # チャコ（2026-10-07 ログで確認）
-    0x1617: ("冲捶", "上"), 0x164A: ("勢冲捶", "上長押し"), 0x1618: ("連捶2段目", "上､上"),
-    0x1653: ("連捶掌3段目", "上､上､上"), 0x164B: ("天中掌(中)", "(上､上､上 or →上)､中"),
-    0x1634: ("攪打頂肘3段目", "上､上､中"), 0x1638: ("連捶肘挫掌4段目", "上､上､中､中"),
-    0x1639: ("連捶掃双脚3段目", "上､上､下"), 0x1673: ("裏冲天脚(中)", "(上､上､下 or Ｇ下)､中"),
-    0x1684: ("＊天掌", "→上"), 0x1620: ("螺旋脚", "←↑↓上"), 0x16A0: ("空旋脚", "→→上"),
-    0x16A2: ("竜尾脚", "↑↑上/↓↓上"), 0x1615: ("螺旋激脚", "Ｇ上"), 0x165E: ("横避双撞掌", "しゃがみ上"),
-    0x1622: ("端脚", "中"), 0x1623: ("連端脚2段目", "中､中"), 0x1624: ("連端天脚2段目", "中､上"),
-    0x1647: ("連端旋脚2段目", "中､上(旋)"), 0x1631: ("伏勢虎", "中､Ｇ"), 0x162F: ("渦螺旋掌", "中､→"),
-    0x162B: ("螺旋掌", "→中"), 0x161E: ("双単鞭", "←↑↓中"), 0x161F: ("単陽打2段目", "←↑↓中､中"),
-    0x165B: ("旋踵刃", "←↑↓中+下 / ←←中､中"), 0x1630: ("落踵双脚", "←←中"),
-    0x1682: ("魂心螺旋掌?", "↑中､↑↓中"), 0x16A4: ("魂心螺旋掌2?", "↑中､↑↓中､↓"),
-    0x162C: ("双統掌", "→→中"), 0x1667: ("練気弾", "←中←"),
-    0x163A: ("冲天脚?", "立ち上がり中"), 0x1648: ("冲天脚(長押し)?", "立ち上がり中長押し"),
-    0x1658: ("勢壁靠?", "走り始め中"), 0x161B: ("跳飛双捶?", "走り中"),
-    0x1626: ("斧刃脚", "下"), 0x1649: ("斧刃連脚2段目", "下､下"), 0x1657: ("幻斧双脚", "下､Ｇ"),
-    0x164C: ("踏歩斧刃脚", "方向+下"), 0x164D: ("連斧旋脚2段目", "方向+下､中"),
-    0x1652: ("環斧連旋脚3段目", "方向+下､中､中"), 0x164E: ("反撥虎", "方向+下､Ｇ"),
-    0x167E: ("双撞掌", "方向+下､Ｇ､上"), 0x1675: ("猛虎爬山", "方向+下､Ｇ､中"),
-    0x1681: ("拗歩転刃脚", "→→下"), 0x1619: ("裏双脚", "Ｇ下"), 0x163B: ("立ち下（技名不明）", "立ち上がりに下"),
-    0x1660: ("反動脚(走り上)", "走り上"), 0x1662: ("反動三段脚2段目", "走り上､上"),
-    0x1663: ("反動三段脚3段目", "走り上､上､上"), 0x1661: ("反動天地脚2段目", "走り上､下"),
-    0x164F: ("滑刃腿", "走り下"), 0x165A: ("裏斧刃脚", "後ろ向きで下"),
-}
+WAZA_DIR = Path(__file__).resolve().parent / "waza"  # 技表（キャラごとのJSON）
+ATTEMPT_GAP_SEC = 0.7    # 技登録: キャラの技IDがこれ以上途切れたら、次に出た技を新しい1回分として数え直す
+IDLE_HOLD_SEC = 1.5      # 技登録: 同じIDがこれ以上続いたら待機の動作とみなす（キャラ専用の待機IDがあるため）
+
+# 技表から作る ID → (技名, コマンド)。起動時と技登録の後に waza フォルダから読み直す
+KNOWN_IDS = {}
 CHARACTERS = {0x08: "エポン", 0x10: "マリー", 0x16: "チャコ"}
 # エリアID（0x123108）→ダンジョン名（分かったら追記していく）
 AREA_NAMES = {0x21: "プラクティス", 0x1E: "遺跡", 0x26: "神殿", 0x1C: "封印の迷宮", 0x2F: "フィールド"}
@@ -102,6 +77,66 @@ def id_label(slot_id):
     if slot_id in KNOWN_IDS:
         return KNOWN_IDS[slot_id][label_mode]
     return CHARACTERS.get(slot_id >> 8, "共通?" if slot_id >> 8 == 0 else "")
+
+
+def load_waza():
+    """waza フォルダのJSONを読む。戻り値は ({ファイル: 中身}, [読めなかったファイルのメッセージ])"""
+    files, errors = {}, []
+    for path in sorted(WAZA_DIR.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for move in data["技"]:
+                [int(i, 16) for i in move["ID"]]
+            [int(i, 16) for i in data.get("待機ID", [])]
+            [int(i, 16) for i in data.get("表示名", {})]
+            files[path] = data
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            errors.append(f"{path.name} が読めません: {e}")
+    return files, errors
+
+
+def build_known_ids(files):
+    """技の最後の段のIDはその技の名前、途中の段のIDは「技名(n段目)」にする。
+    同じIDを使う技が複数ある時は、そのIDが出るまでの段の数が少ない技を優先する（連携技の最後の段が単発技の名前を取らないように）。
+    段の数が同じなら、そのIDで終わる技 → 技表で先に書いてある技の順"""
+    best = {}  # ID → ((段, 途中の段なら1), (技名, コマンド))
+    for data in files.values():
+        prefix = int(data["ID上2桁"] or "0", 16)  # 空 = まだ分からない
+        if prefix:
+            CHARACTERS[prefix] = data["キャラ"]
+        for i in data.get("待機ID", []):
+            best.setdefault(int(i, 16), ((0, 0), ("待機", "待機")))
+        for move in data["技"]:
+            ids = [int(i, 16) for i in move["ID"]]
+            parts = move["コマンド"].split("､")
+            for n, slot_id in enumerate(ids, 1):
+                if n == len(ids):
+                    key, label = (n, 0), (move["技名"], move["コマンド"])
+                else:
+                    cmd = "､".join(parts[:n]) if len(parts) == len(ids) else move["コマンド"]
+                    key, label = (n, 1), (f"{move['技名']}({n}段目)", cmd)
+                if slot_id not in best or key < best[slot_id][0]:
+                    best[slot_id] = (key, label)
+    KNOWN_IDS.clear()
+    KNOWN_IDS.update({slot_id: label for slot_id, (_, label) in best.items()})
+    # 技表の "表示名" は上の決め方より優先（同じIDを使う技どうしで、表示を手で決めたい時）
+    for data in files.values():
+        for i, (name, cmd) in data.get("表示名", {}).items():
+            KNOWN_IDS[int(i, 16)] = (name, cmd)
+
+
+def save_waza(path, data):
+    """手で直しやすいように1技1行で書く"""
+    lines = ["{", f'  "キャラ": {json.dumps(data["キャラ"], ensure_ascii=False)},',
+             f'  "ID上2桁": {json.dumps(data["ID上2桁"])},',
+             *([f'  "待機ID": {json.dumps(data["待機ID"])},'] if data.get("待機ID") else []),
+             *([f'  "表示名": {json.dumps(data["表示名"], ensure_ascii=False)},'] if data.get("表示名") else []),
+             '  "技": [',
+             ",\n".join("    " + json.dumps(m, ensure_ascii=False) for m in data["技"]),
+             "  ]", "}", ""]
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines), encoding="utf-8")
+    tmp.replace(path)
 
 
 def gdb_packet(body):
@@ -170,6 +205,333 @@ class GdbClient(GdbReader):
                     return
 
 
+class Register:
+    """技登録ウィンドウ。技表の技を1つずつ表示し、実際に出した技IDの並びをその技に登録する"""
+
+    def __init__(self, app):
+        self.app = app
+        self.chain = []         # 今回出た技IDの並び（同じIDの連続はまとめる）
+        self.last_seen = 0.0    # キャラの技IDが最後に出ていた時刻
+        self.cur_id, self.cur_since = None, 0.0  # 今出ているIDと、出始めた時刻（待機の判定用）
+        self.path = None
+        self.index = 0
+
+        self.top = tk.Toplevel(app.root)
+        self.top.title("技登録")
+        self.top.attributes("-topmost", True)
+        self.top.configure(bg="black", padx=10, pady=8)
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+
+        head = tk.Frame(self.top, bg="black")
+        head.pack(fill="x")
+        self.paths = {path.stem: path for path in app.waza}
+        self.file_var = tk.StringVar(value=next(iter(self.paths)))
+        tk.OptionMenu(head, self.file_var, *self.paths, command=lambda _: self.select_file()).pack(side="left")
+        self.progress = tk.Label(head, font=app.fonts[13], fg="gray60", bg="black")
+        self.progress.pack(side="left", padx=8)
+
+        self.move_label = tk.Label(self.top, font=app.fonts[16], fg="white", bg="black", justify="left", anchor="w")
+        self.move_label.pack(fill="x", pady=(8, 0))
+        self.saved_label = tk.Label(self.top, font=app.fonts[13], fg="gray60", bg="black", justify="left", anchor="w")
+        self.saved_label.pack(fill="x")
+        self.idle_label = tk.Label(self.top, font=app.fonts[13], fg="gray60", bg="black", justify="left", anchor="w")
+        self.idle_label.pack(fill="x")
+        # 出たIDの並び。登録済みのIDは色を変えて、まだ無いIDと見分けやすくする
+        self.chain_text = tk.Text(self.top, font=app.fonts[16], fg="#9fe89f", bg="black", width=44, height=1,
+                                  borderwidth=0, highlightthickness=0, state="disabled", cursor="arrow")
+        self.chain_text.tag_configure("new", foreground="#9fe89f")    # 未登録
+        self.chain_text.tag_configure("this", foreground="#7fd4ff")   # 今の技に登録済み
+        self.chain_text.tag_configure("other", foreground="#ffd84d")  # 他の技（待機）で登録済み
+        self.chain_text.tag_configure("info", foreground="gray60")
+        self.chain_text.pack(fill="x", pady=8)
+
+        buttons = tk.Frame(self.top, bg="black")
+        buttons.pack(fill="x")
+        for text, command in (("登録 (Enter)", self.register), ("スキップ (S)", self.skip),
+                              ("やり直し (BS)", self.retry),
+                              ("← 前", lambda: self.go(-1)), ("次 →", lambda: self.go(1)),
+                              ("待機の判定を消す", self.clear_idle)):
+            tk.Button(buttons, text=text, command=command).pack(side="left")
+
+        # 手入力: wikiに無い技の追加や、IDを直接書き込む時に使う
+        manual = tk.Frame(self.top, bg="black")
+        manual.pack(fill="x", pady=(8, 0))
+        self.m_ids, self.m_name, self.m_cmd = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        for label, var, width in (("ID", self.m_ids, 16), ("技名", self.m_name, 14), ("コマンド", self.m_cmd, 10)):
+            tk.Label(manual, text=label, fg="white", bg="black").pack(side="left")
+            entry = tk.Entry(manual, textvariable=var, width=width)
+            entry.pack(side="left", padx=(2, 8))
+            if var is not self.m_cmd:
+                entry.bind("<Return>", lambda e: self.find())  # ID欄・技名欄で Enter = 探す
+        tk.Button(manual, text="探す", command=self.find).pack(side="left")
+        # 何を変えるボタンか分かるよう、段に分けて見出しを付ける
+        rows = (
+            ("ノートの表示", (("ノートに出る名前を変更", self.set_label),)),
+            ("技表", (("wikiに無い技を足す", self.add_move), ("この技を消す", self.delete_move),
+                      ("このIDを待機にする", self.add_typed_idle))),
+        )
+        for title, row_buttons in rows:
+            row = tk.Frame(self.top, bg="black")
+            row.pack(fill="x", pady=(4, 0))
+            tk.Label(row, text=title, font=self.app.fonts[13], fg="gray60", bg="black", width=12,
+                     anchor="w").pack(side="left")
+            for text, command in row_buttons:
+                tk.Button(row, text=text, command=command).pack(side="left")
+
+        # 入力欄で文字を打っている時はキー操作にしない
+        for key, command in (("<Return>", self.register), ("<BackSpace>", self.retry), ("s", self.skip),
+                             ("<Left>", lambda: self.go(-1)), ("<Right>", lambda: self.go(1))):
+            self.top.bind(key, lambda e, c=command: None if isinstance(e.widget, tk.Entry) else c())
+        self.select_file()
+
+    def close(self):
+        self.app.register_window = None
+        self.top.destroy()
+
+    @property
+    def data(self):
+        return self.app.waza[self.path]
+
+    def select_file(self):
+        self.path = self.paths[self.file_var.get()]
+        self.prefix = int(self.data["ID上2桁"], 16) if self.data["ID上2桁"] else None
+        # まだIDが無い（スキップもしていない）最初の技から始める
+        self.index = next((i for i, m in enumerate(self.data["技"]) if self.todo(m)), 0)
+        self.retry()
+
+    @staticmethod
+    def todo(move):
+        return not move["ID"] and not move.get("スキップ")
+
+    def go_next_todo(self):
+        """次のまだやっていない技へ（無ければ1つ次へ）"""
+        moves = self.data["技"]
+        order = list(range(self.index + 1, len(moves))) + list(range(self.index + 1))
+        self.index = next((i for i in order if self.todo(moves[i])), (self.index + 1) % len(moves))
+        self.retry()
+
+    def go(self, step):
+        self.index = (self.index + step) % len(self.data["技"])
+        self.retry()
+
+    def retry(self):
+        self.chain = []
+        self.show()
+
+    def register(self):
+        if self.chain:
+            self.set_ids(self.data["技"][self.index], self.chain)
+            self.go_next_todo()
+
+    def set_ids(self, move, ids):
+        move["ID"] = [f"{i:04X}" for i in ids]
+        if self.prefix is None:
+            # ID上2桁が未確認のキャラは、最初に登録した技から決める
+            self.prefix = ids[0] >> 8
+            self.data["ID上2桁"] = f"{self.prefix:02X}"
+            self.app.add_log(f"{self.data['キャラ']} のID上2桁を {self.prefix:02X} にしました", "mark")
+        move.pop("スキップ", None)
+        self.save(f"技登録 {move['技名']}（{move['コマンド']}） = {'→'.join(move['ID'])}")
+
+    def typed_ids(self):
+        """ID欄の16進（空白・→・カンマ区切り）を読む。読めない時は None"""
+        parts = re.split(r"[\s→,､、]+", self.m_ids.get().strip())
+        if not all(re.fullmatch(r"[0-9A-Fa-f]{1,4}", x) for x in parts):
+            return None
+        return [int(x, 16) for x in parts]
+
+    def set_label(self):
+        """ID欄のIDの表示名を、技名欄・コマンド欄の内容にする（技表の "表示名"）。技名欄が空なら元に戻す"""
+        ids = self.typed_ids()
+        if ids is None or len(ids) != 1:
+            self.app.add_log("表示名を変えるIDを1つだけID欄に入れてください（例: 04B2）", "mark")
+            return
+        key, name = f"{ids[0]:04X}", self.m_name.get().strip()
+        labels = self.data.setdefault("表示名", {})
+        if name:
+            cmd = self.m_cmd.get().strip() or KNOWN_IDS.get(ids[0], ("", ""))[1]
+            labels[key] = [name, cmd]
+            log_text = f"技登録 {key} の表示名を「{name}」（{cmd}）にしました"
+        elif labels.pop(key, None):
+            log_text = f"技登録 {key} の表示名を元に戻しました"
+        else:
+            self.app.add_log("技名欄に表示名を入れてください（空にすると元に戻します）", "mark")
+            return
+        if not labels:
+            del self.data["表示名"]
+        self.save(log_text)
+        for var in (self.m_ids, self.m_name, self.m_cmd):
+            var.set("")
+        self.show()
+
+    def add_move(self):
+        """wikiに無い技を技表の最後に足す。IDはID欄、空ならその時に出したIDの並び"""
+        name = self.m_name.get().strip()
+        ids = self.typed_ids() if self.m_ids.get().strip() else self.chain
+        if not name or not ids:
+            self.app.add_log("新しい技には技名と、ID（ID欄に入れるか技を出す）が必要です", "mark")
+            return
+        move = {"分類": "技表に無い技", "技名": name, "コマンド": self.m_cmd.get().strip(), "ID": []}
+        self.data["技"].append(move)
+        self.index = len(self.data["技"]) - 1
+        self.set_ids(move, ids)
+        for var in (self.m_ids, self.m_name, self.m_cmd):
+            var.set("")
+        self.retry()
+
+    def skip(self):
+        """登録しない技（投げなど）に印を付けて次へ。スキップ済みの技で押すと印を外す"""
+        move = self.data["技"][self.index]
+        if move.get("スキップ"):
+            del move["スキップ"]
+            self.save(f"技登録 {move['技名']}（{move['コマンド']}） のスキップを外しました")
+            self.show()
+        else:
+            move["スキップ"] = True
+            self.save(f"技登録 {move['技名']}（{move['コマンド']}） をスキップ")
+            self.go_next_todo()
+
+    def find(self):
+        """ID欄のIDを使う技（ID欄が空なら技名欄の文字を含む技）を探して表示する。押すたびに次の候補へ"""
+        name = self.m_name.get().strip()
+        if self.m_ids.get().strip():
+            ids = self.typed_ids()
+            if ids is None or len(ids) != 1:
+                self.app.add_log("探すIDを1つだけID欄に入れてください（例: 0E3A）", "mark")
+                return
+            key = f"{ids[0]:04X}"
+            hit, what = (lambda m: key in m["ID"]), key
+        elif name:
+            hit, what = (lambda m: name in m["技名"]), f"「{name}」"
+        else:
+            self.app.add_log("ID欄にID、または技名欄に技名の一部を入れてから「探す」を押してください", "mark")
+            return
+        # 今の技表の次の技から探し、無ければ他の技表も探す
+        stems = list(self.paths)
+        start = stems.index(self.file_var.get())
+        for n in range(len(stems) + 1):
+            stem = stems[(start + n) % len(stems)]
+            moves = self.app.waza[self.paths[stem]]["技"]
+            first = self.index + 1 if n == 0 else 0
+            last = self.index + 1 if n == len(stems) else len(moves)
+            found = next((i for i in range(first, last) if hit(moves[i])), None)
+            if found is not None:
+                if stem != self.file_var.get():
+                    self.file_var.set(stem)
+                    self.path = self.paths[stem]
+                    self.prefix = int(self.data["ID上2桁"], 16) if self.data["ID上2桁"] else None
+                self.index = found
+                self.retry()
+                return
+        if self.m_ids.get().strip() and ids[0] in KNOWN_IDS:
+            self.app.add_log(f"{what} を使う技はありません（表示: {KNOWN_IDS[ids[0]][0]}。待機か表示名だけのIDです）", "mark")
+        else:
+            self.app.add_log(f"{what} を使う技は見つかりませんでした", "mark")
+
+    def delete_move(self):
+        """「wikiに無い技を足す」で足した技を技表から消す（wikiの技は消さずにスキップを使う）"""
+        moves = self.data["技"]
+        move = moves[self.index]
+        if move.get("分類") != "技表に無い技":
+            self.app.add_log("消せるのは「wikiに無い技を足す」で足した技だけです（wikiの技はスキップを使ってください）", "mark")
+            return
+        if not messagebox.askyesno("技を消す", f"{move['技名']}（{move['コマンド']}）を技表から消しますか？", parent=self.top):
+            return
+        del moves[self.index]
+        self.index = min(self.index, len(moves) - 1)
+        self.save(f"技登録 {move['技名']}（{move['コマンド']}） を技表から消しました")
+        self.retry()
+
+    @property
+    def idle_ids(self):
+        return {int(i, 16) for i in self.data.get("待機ID", [])}
+
+    def add_idle(self, move):
+        self.data.setdefault("待機ID", []).append(f"{move:04X}")
+        self.save(f"技登録 {move:04X} を {self.data['キャラ']} の待機の動作にしました")
+        self.chain = [i for i in self.chain if i != move]
+        self.show()
+
+    def add_typed_idle(self):
+        ids = self.typed_ids()
+        if ids is None or len(ids) != 1:
+            self.app.add_log("待機にするIDを1つだけID欄に入れてください（例: 0E01）", "mark")
+            return
+        if ids[0] not in self.idle_ids:
+            self.add_idle(ids[0])
+        self.m_ids.set("")
+
+    def clear_idle(self):
+        if self.data.get("待機ID"):
+            del self.data["待機ID"]
+            self.save(f"技登録 {self.data['キャラ']} の待機IDを消しました")
+            self.show()
+
+    def save(self, log_text):
+        save_waza(self.path, self.data)
+        build_known_ids(self.app.waza)
+        self.app.add_log(log_text, "mark")
+        self.app.redraw_log()
+
+    def matches(self, move):
+        if self.prefix is None:
+            return move >> 8 != 0  # ID上2桁が未確認なら、共通以外は全部拾う
+        if self.prefix:
+            return move >> 8 == self.prefix
+        return move >> 8 == 0 and move not in IDLE_MOVES  # 共通の表は動作も含めて拾う
+
+    def on_tick(self, now, move):
+        if move != self.cur_id:
+            self.cur_id, self.cur_since = move, now
+        elif (now - self.cur_since >= IDLE_HOLD_SEC and self.matches(move)
+              and not self.idle_ids and self.chain == [move]):
+            # 技を出す前から長く続くIDは待機の動作。技表に覚えさせて、並びから外す
+            # （技の後に続く構えを待機と間違えないよう、待機IDがまだ無いキャラの、並びの先頭の時だけ）
+            self.add_idle(move)
+        if not self.matches(move) or move in self.idle_ids:
+            return
+        gap = now - self.last_seen > ATTEMPT_GAP_SEC
+        self.last_seen = now
+        if gap or not self.chain:
+            self.chain = [move]
+        elif self.chain[-1] != move:
+            self.chain.append(move)
+        else:
+            return
+        self.show()
+
+    def show(self):
+        moves = self.data["技"]
+        done = sum(bool(m["ID"]) for m in moves)
+        skipped = sum(bool(m.get("スキップ")) for m in moves)
+        self.progress.config(text=f"{self.index + 1}/{len(moves)}  （ID登録済み {done}  スキップ {skipped}）")
+        move = moves[self.index]
+        memo = f"  ※{move['メモ']}" if move.get("メモ") else ""
+        self.move_label.config(text=f"[{move.get('分類', '')}] {move['技名']}{memo}\n{move['コマンド']}")
+        # 登録済みなら「済」と同じ水色、まだなら灰色で、一目で分かるようにする
+        self.saved_label.config(text="登録済みのID: " + ("→".join(move["ID"]) or "なし")
+                                + ("  （スキップ中）" if move.get("スキップ") else ""),
+                                fg="#7fd4ff" if move["ID"] else "gray60")
+        self.idle_label.config(text="待機とみなすID: " + (" ".join(self.data.get("待機ID", [])) or "まだなし"))
+        own = {int(i, 16) for i in move["ID"]}
+        if self.chain:
+            lines = []
+            for i in self.chain:
+                if i in own:
+                    lines.append((f"済 {i:04X} {KNOWN_IDS[i][label_mode]}（この技）", "this"))
+                elif i in KNOWN_IDS:
+                    lines.append((f"済 {i:04X} {KNOWN_IDS[i][label_mode]}", "other"))
+                else:
+                    lines.append((f"新 {i:04X} （未登録）", "new"))
+        else:
+            lines = [("この技を出してください（出たIDがここに並びます）", "info")]
+        self.chain_text.config(state="normal", height=len(lines))
+        self.chain_text.delete("1.0", "end")
+        for n, (text, tag) in enumerate(lines):
+            self.chain_text.insert("end", ("\n" if n else "") + text, tag)
+        self.chain_text.config(state="disabled")
+
+
 class App:
     def __init__(self):
         self.gdb = GdbClient()
@@ -185,6 +547,8 @@ class App:
         self.log_entries = deque(maxlen=LOG_LINES)  # (時刻表示, 本文, タグ)。表示切り替えで書き直す
         self.playtime = ""
         self.pending_write = None
+        self.register_window = None
+        self.waza = {}
 
         LOG_DIR.mkdir(parents=True, exist_ok=True)
         self.log_path = LOG_DIR / f"{datetime.now():%Y%m%d_%H%M%S}.txt"
@@ -195,16 +559,19 @@ class App:
         self.root.attributes("-topmost", True)
         self.root.configure(bg="black")
         # Mac・Windowsどちらにもある等幅フォントを使う
-        fonts = {}
+        self.fonts = fonts = {}
         for size in (13, 15, 16):
             fonts[size] = tkfont.nametofont("TkFixedFont").copy()
             fonts[size].configure(size=size)
 
+        top = tk.Frame(self.root, bg="black")
+        top.pack(fill="x")
+        tk.Button(top, text="技登録", command=self.open_register).pack(side="right", anchor="ne", padx=10, pady=6)
         self.status = tk.Label(
-            self.root, text="", font=fonts[15], fg="white", bg="black",
+            top, text="", font=fonts[15], fg="white", bg="black",
             justify="left", anchor="w", padx=10, pady=6,
         )
-        self.status.pack(fill="x")
+        self.status.pack(side="left", fill="x")
 
         self.table = tk.Text(
             self.root, font=fonts[16], fg="white", bg="black", width=40,
@@ -224,11 +591,6 @@ class App:
         tk.Button(controls, text="区切り", command=lambda: self.mark("────")).pack(side="left")
         self.mode_button = tk.Button(controls, text="表示: 技名", command=self.toggle_label)
         self.mode_button.pack(side="left", padx=(8, 0))
-        self.freeze = tk.BooleanVar(value=False)
-        tk.Checkbutton(
-            controls, text="メモ（枠0・1）を空に固定", variable=self.freeze,
-            fg="white", bg="black", selectcolor="gray20",
-        ).pack(side="left", padx=8)
 
         writer = tk.Frame(self.root, bg="black", padx=10, pady=4)
         writer.pack(fill="x")
@@ -241,7 +603,7 @@ class App:
         tk.Button(writer, text="書き込み", command=self.request_write).pack(side="left")
 
         self.log = tk.Text(
-            self.root, font=fonts[13], fg="white", bg="gray10", width=60,
+            self.root, font=fonts[13], fg="white", bg="gray10", width=40,
             height=14, padx=10, pady=6, borderwidth=0, highlightthickness=0,
             state="disabled",
         )
@@ -253,6 +615,7 @@ class App:
 
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         self.add_log(f"ログ保存先: {LOG_DIR.name}/{self.log_path.name}", "info")  # フルパスだとユーザー名が映るので出さない
+        self.reload_waza()
         self.root.after(0, self.tick)
 
     def quit(self):
@@ -287,6 +650,23 @@ class App:
         label_mode = 1 - label_mode
         self.mode_button.config(text=f"表示: {LABEL_MODES[label_mode]}")
         self.redraw_log()
+
+    def reload_waza(self):
+        self.waza, errors = load_waza()
+        build_known_ids(self.waza)
+        for error in errors:
+            self.add_log(error, "mark")
+        summary = " / ".join(f"{d['キャラ']} {sum(bool(m['ID']) for m in d['技'])}/{len(d['技'])}"
+                             for d in self.waza.values())
+        self.add_log(f"技表（IDあり/全部）: {summary or 'waza フォルダが見つかりません（技名は出ません）'}", "info")
+
+    def open_register(self):
+        if self.register_window:
+            self.register_window.top.lift()
+        elif self.waza:
+            self.register_window = Register(self)
+        else:
+            self.add_log("waza フォルダに技表（.json）がありません", "mark")
 
     def mark(self, text):
         self.add_log(f"{text}  {self.slots_summary(self.prev_slots)}", "mark")
@@ -375,8 +755,6 @@ class App:
             self.gdb.write(addr, slot_id.to_bytes(2, "little") + count.to_bytes(2, "little"))
             self.add_log(f"書き込み 枠{slot} = {slot_id:04X}:{count}", "mark")
             self.prev_slots = None  # 書き込みを増加として拾わない
-        if self.freeze.get():
-            self.gdb.write(TABLE_TOP + SLOT_OFFSET, bytes(4 * CURRENT_SLOTS))
 
     def detect_changes(self, state, now):
         hp, slots = state["hp"], state["slots"]
@@ -475,6 +853,8 @@ class App:
             self.prev_slots = self.prev_hp = None
         self.playtime = state["playtime"]
         self.detect_changes(state, now)
+        if self.register_window:
+            self.register_window.on_tick(now, state["move"])
         self.render(state, now)
         self.root.after(POLL_MS, self.tick)
 
